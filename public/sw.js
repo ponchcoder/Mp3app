@@ -3,7 +3,7 @@
  * Caches app shell for offline-first functionality
  */
 
-const CACHE_NAME = "whisper-melody-v3";
+const CACHE_NAME = "whisper-melody-v4";
 const APP_SHELL = [
   "/",
   "/manifest.json",
