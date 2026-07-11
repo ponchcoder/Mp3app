@@ -5,6 +5,7 @@
 
 import { useRef, useCallback, useEffect, useState } from "react";
 import type { AudioAnalysis } from "@/types";
+import { isMobileDevice } from "@/utils";
 
 const DEFAULT_ANALYSIS: AudioAnalysis = {
   bass: 0,
@@ -29,6 +30,7 @@ export function useAudioAnalyzer(
   const rafRef = useRef<number>(0);
 
   const connect = useCallback(() => {
+    if (isMobileDevice()) return;
     const audio = audioRef.current;
     if (!audio || connectedRef.current) return;
 

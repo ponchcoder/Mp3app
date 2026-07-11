@@ -21,7 +21,6 @@ import { NowPlayingScreen } from "@/components/screens/NowPlayingScreen";
 import { QueuePanel } from "@/components/screens/QueuePanel";
 import { SurprisesLayer } from "@/components/ui/SurprisesLayer";
 import { useEnvironmentCycle } from "@/hooks/useEnvironment";
-import { useAudioAnalyzer } from "@/hooks/useAudioAnalyzer";
 import { useSurprises } from "@/hooks/useSurprises";
 import { useListeningTime } from "@/hooks/useListeningTime";
 import type { TabId } from "@/types";
@@ -29,7 +28,7 @@ import type { TabId } from "@/types";
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const { settings, setEnvironment } = useSettings();
-  const { currentSong, isPlaying, audioRef } = usePlayer();
+  const { currentSong, isPlaying } = usePlayer();
   const {
     showFullPlayer,
     showQueue,
@@ -42,16 +41,11 @@ function AppContent() {
 
   const noAnimation = settings.noAnimation;
   useEnvironmentCycle(settings.currentEnvironment, noAnimation, setEnvironment);
-  const { connect } = useAudioAnalyzer(audioRef, isPlaying);
   const listeningMinutes = useListeningTime(isPlaying);
   const { surprises, triggerFavoriteSparkle, triggerPlayHeart } = useSurprises(
     listeningMinutes,
     noAnimation
   );
-
-  useEffect(() => {
-    if (isPlaying) connect();
-  }, [isPlaying, connect]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") {

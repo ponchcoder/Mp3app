@@ -6,14 +6,44 @@
 import type { SongMeta } from "@/types";
 import { getDisplayTitle, getDisplayArtist } from "@/utils";
 
-type MediaAction = "play" | "pause" | "previoustrack" | "nexttrack" | "seekbackward" | "seekforward";
+type MediaAction =
+  | "play"
+  | "pause"
+  | "previoustrack"
+  | "nexttrack"
+  | "seekbackward"
+  | "seekforward"
+  | "seekto";
 
 interface MediaSessionCallbacks {
   onPlay: () => void;
   onPause: () => void;
   onPrevious: () => void;
   onNext: () => void;
-  onSeek?: (time: number) => void;
+  onSeek?: (offset: number) => void;
+  onSeekTo?: (time: number) => void;
+}
+
+/** Tell iOS/Android this app is a music player (required for lock screen audio). */
+export function enableBackgroundPlayback(): void {
+  const nav = navigator as Navigator & {
+    audioSession?: { type: string };
+  };
+  if (nav.audioSession) {
+    try {
+      nav.audioSession.type = "playback";
+    } catch {
+      // Unsupported browser
+    }
+  }
+}
+
+/** Configure the <audio> element for inline + lock screen playback on iOS. */
+export function configureAudioElement(audio: HTMLAudioElement): void {
+  audio.setAttribute("playsinline", "true");
+  audio.setAttribute("webkit-playsinline", "true");
+  audio.preload = "auto";
+  audio.disableRemotePlayback = false;
 }
 
 /**
@@ -29,6 +59,7 @@ export function setupMediaSession(callbacks: MediaSessionCallbacks): void {
     "nexttrack",
     "seekbackward",
     "seekforward",
+    "seekto",
   ];
 
   for (const action of actions) {
@@ -48,12 +79,15 @@ export function setupMediaSession(callbacks: MediaSessionCallbacks): void {
             callbacks.onNext();
             break;
           case "seekbackward":
-            callbacks.onSeek?.(
-              Math.max(0, (details.seekOffset ?? 10) * -1)
-            );
+            callbacks.onSeek?.(-(details.seekOffset ?? 10));
             break;
           case "seekforward":
             callbacks.onSeek?.(details.seekOffset ?? 10);
+            break;
+          case "seekto":
+            if (details.seekTime != null) {
+              callbacks.onSeekTo?.(details.seekTime);
+            }
             break;
         }
       });

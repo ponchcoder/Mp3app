@@ -4,6 +4,16 @@
 
 import type { SongMeta, SortField, SortDirection, TimeOfDay } from "@/types";
 
+/** Detect phones/tablets where Web Audio breaks background playback */
+export function isMobileDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (/Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) {
+    return true;
+  }
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
 /** Format seconds into mm:ss display */
 export function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return "0:00";

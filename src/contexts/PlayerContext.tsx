@@ -27,7 +27,10 @@ import {
   updateMediaPlaybackState,
   updateMediaPosition,
   clearMediaSession,
+  enableBackgroundPlayback,
+  configureAudioElement,
 } from "@/services/media-session";
+import { useBackgroundAudio } from "@/hooks/useBackgroundAudio";
 
 interface PlayerContextValue {
   // State
@@ -123,6 +126,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const loadAudioRef = useRef(loadAudio);
   loadAudioRef.current = loadAudio;
 
+  useBackgroundAudio(audioRef, isPlaying);
+
   // Load persisted playback state on mount
   useEffect(() => {
     const hydrationToken = hydrationTokenRef.current;
@@ -168,6 +173,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         const audio = audioRef.current;
         if (audio) mediaHandlersRef.current.seek(audio.currentTime + offset);
       },
+      onSeekTo: (time) => {
+        mediaHandlersRef.current.seek(time);
+      },
     });
   }, [seek]);
 
@@ -207,18 +215,28 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
       const { audioData: _audio, ...meta } = song;
       void _audio;
+
+      enableBackgroundPlayback();
       setCurrentSong(meta);
+      updateMediaMetadata(meta);
+      updateMediaPlaybackState(true);
+
       await loadAudio(song);
       await recordPlay(songId);
 
       const audio = audioRef.current;
       if (audio) {
-        await audio.play();
-        setIsPlaying(true);
+        configureAudioElement(audio);
+        try {
+          await audio.play();
+          setIsPlaying(true);
+          updateMediaPlaybackState(true);
+          updateMediaPosition(audio.duration, audio.currentTime);
+        } catch {
+          setIsPlaying(false);
+          updateMediaPlaybackState(false);
+        }
       }
-
-      updateMediaMetadata(meta);
-      updateMediaPlaybackState(true);
     },
     [loadAudio]
   );
@@ -233,6 +251,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const audio = audioRef.current;
       if (!audio) return;
 
+      enableBackgroundPlayback();
+
       if (!currentSong && queue.length > 0) {
         const idx = queueIndex >= 0 ? queueIndex : 0;
         await playSong(queue[idx].songId);
@@ -244,6 +264,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         await audio.play();
         setIsPlaying(true);
         updateMediaPlaybackState(true);
+        updateMediaPosition(audio.duration, audio.currentTime);
       } catch {
         // Autoplay may be blocked
       }
@@ -506,12 +527,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
       <audio
-        ref={audioRef}
+        ref={(el) => {
+          audioRef.current = el;
+          if (el) configureAudioElement(el);
+        }}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
         onLoadedMetadata={handleLoadedMetadata}
-        preload="metadata"
         playsInline
+        preload="auto"
       />
     </PlayerContext.Provider>
   );
