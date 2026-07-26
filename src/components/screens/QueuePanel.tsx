@@ -19,7 +19,6 @@ import {
 } from "@/hooks/useQueueDragReorder";
 import { getDisplayTitle, getDisplayArtist } from "@/utils";
 import type { SongMeta } from "@/types";
-import type { QueueItem } from "@/types";
 
 function QueueRowContent({ song }: { song: SongMeta }) {
   return (
