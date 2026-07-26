@@ -67,6 +67,48 @@ interface PlayerContextValue {
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
+interface PlaybackSnapshot {
+  queue: QueueItem[];
+  queueIndex: number;
+  shuffle: boolean;
+  repeat: RepeatMode;
+}
+
+interface PreloadedTrack {
+  songId: string;
+  song: Song;
+  url: string;
+  queueIndex: number;
+}
+
+function computeNextIndex(
+  snapshot: PlaybackSnapshot,
+  shuffledOrder: number[]
+): number {
+  const { queue, queueIndex, shuffle } = snapshot;
+  if (queue.length === 0) return -1;
+
+  if (shuffle) {
+    let order = shuffledOrder;
+    if (order.length === 0) {
+      order = shuffleArray(Array.from({ length: queue.length }, (_, i) => i));
+    }
+    const currentShuffleIdx = order.indexOf(queueIndex);
+    const nextShuffleIdx = (currentShuffleIdx + 1) % order.length;
+    return order[nextShuffleIdx] ?? 0;
+  }
+
+  return (queueIndex + 1) % queue.length;
+}
+
+function shouldStopAtQueueEnd(
+  snapshot: PlaybackSnapshot,
+  nextIdx: number
+): boolean {
+  const { queue, queueIndex, repeat } = snapshot;
+  return nextIdx === 0 && queueIndex === queue.length - 1 && repeat === "off";
+}
+
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentSong, setCurrentSong] = useState<SongMeta | null>(null);
@@ -83,6 +125,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const shuffledOrderRef = useRef<number[]>([]);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydrationTokenRef = useRef(0);
+  const playbackRef = useRef<PlaybackSnapshot>({
+    queue: [],
+    queueIndex: -1,
+    shuffle: false,
+    repeat: "off",
+  });
+  const preloadedNextRef = useRef<PreloadedTrack | null>(null);
+  const endHandledRef = useRef(false);
+  const preloadNextTrackRef = useRef<() => Promise<void>>(async () => {});
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
@@ -127,6 +178,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   loadAudioRef.current = loadAudio;
 
   useBackgroundAudio(audioRef, isPlaying);
+
+  useEffect(() => {
+    playbackRef.current = { queue, queueIndex, shuffle, repeat };
+  }, [queue, queueIndex, shuffle, repeat]);
 
   // Load persisted playback state on mount
   useEffect(() => {
@@ -232,6 +287,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
           setIsPlaying(true);
           updateMediaPlaybackState(true);
           updateMediaPosition(audio.duration, audio.currentTime);
+          endHandledRef.current = false;
+          void preloadNextTrackRef.current();
         } catch {
           setIsPlaying(false);
           updateMediaPlaybackState(false);
@@ -286,23 +343,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     else play();
   }, [isPlaying, play, pause]);
 
-  const getNextIndex = useCallback((): number => {
-    if (queue.length === 0) return -1;
-
-    if (shuffle) {
-      if (shuffledOrderRef.current.length === 0) {
-        shuffledOrderRef.current = shuffleArray(
-          Array.from({ length: queue.length }, (_, i) => i)
-        );
-      }
-      const currentShuffleIdx = shuffledOrderRef.current.indexOf(queueIndex);
-      const nextShuffleIdx = (currentShuffleIdx + 1) % shuffledOrderRef.current.length;
-      return shuffledOrderRef.current[nextShuffleIdx];
-    }
-
-    return (queueIndex + 1) % queue.length;
-  }, [queue, queueIndex, shuffle]);
-
   const getPrevIndex = useCallback((): number => {
     if (queue.length === 0) return -1;
 
@@ -326,20 +366,126 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return queueIndex <= 0 ? queue.length - 1 : queueIndex - 1;
   }, [queue, queueIndex, shuffle]);
 
-  const next = useCallback(async () => {
-    if (queue.length === 0) return;
+  const clearPreloadedNext = useCallback(() => {
+    if (preloadedNextRef.current) {
+      revokeAudioURL(preloadedNextRef.current.url);
+      preloadedNextRef.current = null;
+    }
+  }, []);
 
-    const nextIdx = getNextIndex();
+  const preloadNextTrack = useCallback(async () => {
+    const snapshot = playbackRef.current;
+    const nextIdx = computeNextIndex(snapshot, shuffledOrderRef.current);
 
-    // Handle repeat modes
-    if (nextIdx === 0 && queueIndex === queue.length - 1 && repeat === "off") {
+    if (nextIdx < 0 || shouldStopAtQueueEnd(snapshot, nextIdx)) {
+      clearPreloadedNext();
+      return;
+    }
+
+    const nextSongId = snapshot.queue[nextIdx]?.songId;
+    if (!nextSongId || preloadedNextRef.current?.songId === nextSongId) return;
+
+    clearPreloadedNext();
+
+    const song = await getSong(nextSongId);
+    if (!song) return;
+
+    const current = playbackRef.current;
+    const currentNextIdx = computeNextIndex(current, shuffledOrderRef.current);
+    if (
+      currentNextIdx !== nextIdx ||
+      current.queue[currentNextIdx]?.songId !== nextSongId
+    ) {
+      return;
+    }
+
+    const url = createAudioURL(song.audioData);
+    preloadedNextRef.current = { songId: nextSongId, song, url, queueIndex: nextIdx };
+  }, [clearPreloadedNext]);
+
+  preloadNextTrackRef.current = preloadNextTrack;
+
+  const playFromPreload = useCallback(
+    async (preloaded: PreloadedTrack): Promise<boolean> => {
+      const audio = audioRef.current;
+      if (!audio) return false;
+
+      enableBackgroundPlayback();
+
+      if (currentUrlRef.current) {
+        revokeAudioURL(currentUrlRef.current);
+      }
+
+      currentUrlRef.current = preloaded.url;
+      preloadedNextRef.current = null;
+
+      const { audioData: _audio, ...meta } = preloaded.song;
+      void _audio;
+
+      setCurrentSong(meta);
+      setQueueIndex(preloaded.queueIndex);
+      updateMediaMetadata(meta);
+      endHandledRef.current = false;
+
+      audio.src = preloaded.url;
+      audio.volume = volume;
+      configureAudioElement(audio);
+
+      if (audio.readyState < HTMLMediaElement.HAVE_METADATA) {
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            audio.addEventListener("loadedmetadata", () => resolve(), { once: true });
+            audio.load();
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 500)),
+        ]);
+      }
+
+      const trackDuration = audio.duration || preloaded.song.duration;
+      setDuration(trackDuration);
+      void recordPlay(preloaded.songId);
+
+      try {
+        await audio.play();
+        setIsPlaying(true);
+        updateMediaPlaybackState(true);
+        updateMediaPosition(trackDuration, 0);
+        void preloadNextTrack();
+        return true;
+      } catch {
+        setIsPlaying(false);
+        updateMediaPlaybackState(false);
+        return false;
+      }
+    },
+    [volume, preloadNextTrack]
+  );
+
+  const advanceToNext = useCallback(async () => {
+    const snapshot = playbackRef.current;
+    if (snapshot.queue.length === 0) return;
+
+    const nextIdx = computeNextIndex(snapshot, shuffledOrderRef.current);
+    if (shouldStopAtQueueEnd(snapshot, nextIdx)) {
       pause();
       return;
     }
 
+    const preloaded = preloadedNextRef.current;
+    if (preloaded && preloaded.queueIndex === nextIdx) {
+      const ok = await playFromPreload(preloaded);
+      if (ok) return;
+    }
+
+    clearPreloadedNext();
     setQueueIndex(nextIdx);
-    await playSong(queue[nextIdx].songId);
-  }, [queue, queueIndex, repeat, getNextIndex, playSong, pause]);
+    await playSong(snapshot.queue[nextIdx].songId);
+  }, [pause, playFromPreload, clearPreloadedNext, playSong]);
+
+  const next = useCallback(async () => {
+    endHandledRef.current = false;
+    await advanceToNext();
+  }, [advanceToNext]);
 
   const previous = useCallback(async () => {
     if (queue.length === 0) return;
@@ -366,7 +512,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const toggleShuffle = useCallback(() => {
     setShuffle((prev) => !prev);
     shuffledOrderRef.current = [];
-  }, []);
+    clearPreloadedNext();
+  }, [clearPreloadedNext]);
 
   const cycleRepeat = useCallback(() => {
     setRepeat((prev) => {
@@ -377,6 +524,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const playQueue = useCallback(
     async (songIds: string[], startIndex = 0) => {
+      clearPreloadedNext();
       const items: QueueItem[] = songIds.map((id) => ({
         songId: id,
         addedAt: Date.now(),
@@ -386,7 +534,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       shuffledOrderRef.current = [];
       await playSong(songIds[startIndex]);
     },
-    [playSong]
+    [playSong, clearPreloadedNext]
   );
 
   const addToQueue = useCallback((songId: string) => {
@@ -453,6 +601,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setCurrentTime(0);
     setDuration(0);
     shuffledOrderRef.current = [];
+    endHandledRef.current = false;
+    if (preloadedNextRef.current) {
+      revokeAudioURL(preloadedNextRef.current.url);
+      preloadedNextRef.current = null;
+    }
     hydrationTokenRef.current += 1;
     clearMediaSession();
 
@@ -477,18 +630,80 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const handleEnded = useCallback(() => {
-    if (repeat === "one") {
-      seek(0);
-      play();
-    } else {
-      next();
-    }
-  }, [repeat, seek, play, next]);
+  const handleEnded = useCallback(async () => {
+    const snapshot = playbackRef.current;
 
-  const handleLoadedMetadata = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) setDuration(audio.duration);
+    if (snapshot.repeat === "one") {
+      seek(0);
+      endHandledRef.current = false;
+      await play();
+      return;
+    }
+
+    await advanceToNext();
+  }, [seek, play, advanceToNext]);
+
+  const handleEndedRef = useRef(handleEnded);
+  const handleTimeUpdateRef = useRef(handleTimeUpdate);
+  const audioListenersCleanupRef = useRef<(() => void) | null>(null);
+  handleEndedRef.current = handleEnded;
+  handleTimeUpdateRef.current = handleTimeUpdate;
+
+  const attachAudioEventListeners = useCallback(
+    (audio: HTMLAudioElement) => {
+      audioListenersCleanupRef.current?.();
+
+      const onTimeUpdate = () => {
+        handleTimeUpdateRef.current();
+
+        if (endHandledRef.current) return;
+
+        const el = audioRef.current;
+        if (!el || el.paused) return;
+
+        const trackDuration = el.duration;
+        if (!trackDuration || !Number.isFinite(trackDuration)) return;
+
+        const remaining = trackDuration - el.currentTime;
+        if (remaining <= 15) {
+          void preloadNextTrackRef.current();
+        }
+
+        // iOS may not fire `ended` while backgrounded — detect near-end via timeupdate
+        if (el.currentTime >= trackDuration - 0.5) {
+          endHandledRef.current = true;
+          void handleEndedRef.current();
+        }
+      };
+
+      const onEnded = () => {
+        if (endHandledRef.current) return;
+        endHandledRef.current = true;
+        void handleEndedRef.current();
+      };
+
+      const onLoadedMetadata = () => {
+        const el = audioRef.current;
+        if (el) setDuration(el.duration);
+      };
+
+      audio.addEventListener("timeupdate", onTimeUpdate);
+      audio.addEventListener("ended", onEnded);
+      audio.addEventListener("loadedmetadata", onLoadedMetadata);
+
+      audioListenersCleanupRef.current = () => {
+        audio.removeEventListener("timeupdate", onTimeUpdate);
+        audio.removeEventListener("ended", onEnded);
+        audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      };
+    },
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      audioListenersCleanupRef.current?.();
+    };
   }, []);
 
   mediaHandlersRef.current = { play, pause, previous, next, seek };
@@ -529,11 +744,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       <audio
         ref={(el) => {
           audioRef.current = el;
-          if (el) configureAudioElement(el);
+          if (el) {
+            configureAudioElement(el);
+            attachAudioEventListeners(el);
+          }
         }}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={handleEnded}
-        onLoadedMetadata={handleLoadedMetadata}
         playsInline
         preload="auto"
       />

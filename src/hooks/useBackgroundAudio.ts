@@ -23,22 +23,40 @@ export function useBackgroundAudio(
   }, [isPlaying]);
 
   useEffect(() => {
+    let keepAliveInterval: ReturnType<typeof setInterval> | null = null;
+
     const ensurePlayback = () => {
       const audio = audioRef.current;
-      if (!audio || !isPlayingRef.current || !audio.src || audio.ended) return;
+      if (!audio || !isPlayingRef.current || !audio.src) return;
 
       enableBackgroundPlayback();
 
-      if (audio.paused) {
+      // Resume if the OS paused us mid-track (not after natural end — queue advance handles that)
+      if (audio.paused && !audio.ended) {
         void audio.play().catch(() => {});
+      }
+    };
+
+    const startKeepAlive = () => {
+      if (keepAliveInterval) return;
+      keepAliveInterval = setInterval(ensurePlayback, 2000);
+    };
+
+    const stopKeepAlive = () => {
+      if (keepAliveInterval) {
+        clearInterval(keepAliveInterval);
+        keepAliveInterval = null;
       }
     };
 
     const onVisibility = () => {
       enableBackgroundPlayback();
 
-      // Screen locked or app backgrounded — keep audio alive
       if (document.visibilityState === "hidden") {
+        ensurePlayback();
+        startKeepAlive();
+      } else {
+        stopKeepAlive();
         ensurePlayback();
       }
     };
@@ -47,7 +65,12 @@ export function useBackgroundAudio(
     window.addEventListener("pagehide", ensurePlayback);
     window.addEventListener("pageshow", ensurePlayback);
 
+    if (document.visibilityState === "hidden" && isPlayingRef.current) {
+      startKeepAlive();
+    }
+
     return () => {
+      stopKeepAlive();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pagehide", ensurePlayback);
       window.removeEventListener("pageshow", ensurePlayback);
