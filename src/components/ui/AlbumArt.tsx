@@ -17,7 +17,7 @@ const sizeMap = {
   sm: "w-12 h-12 rounded-xl",
   md: "w-16 h-16 rounded-2xl",
   lg: "w-48 h-48 rounded-3xl",
-  xl: "w-64 h-64 md:w-72 md:h-72 rounded-full",
+  xl: "w-64 h-64 md:w-72 md:h-72 rounded-3xl",
 };
 
 export function AlbumArt({

@@ -37,7 +37,7 @@ export function MiniPlayer({ onOpenFullPlayer }: MiniPlayerProps) {
   };
 
   return (
-    <div className="fixed bottom-[72px] left-4 right-4 z-30 mx-auto max-w-lg">
+    <div className="fixed bottom-above-nav left-4 right-4 z-30 mx-auto max-w-lg">
       <div
         className="rounded-2xl bg-[var(--color-player-bg)] backdrop-blur-xl border border-[var(--color-card-border)] shadow-glass overflow-hidden cursor-pointer"
         onClick={handleExpand}

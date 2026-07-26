@@ -166,7 +166,9 @@ export function NowPlayingScreen({
         <div className="relative z-10 flex-1 flex items-center justify-center px-4 py-4 min-w-0 w-full">
           {artwork && (
             <div
-              className="absolute w-[min(320px,85vw)] h-[min(320px,85vw)] rounded-full opacity-35 pointer-events-none"
+              className={`absolute w-[min(320px,85vw)] h-[min(320px,85vw)] opacity-35 pointer-events-none ${
+                settings.vinylMode ? "rounded-full" : "rounded-3xl"
+              }`}
               style={{
                 backgroundImage: `url(${artwork})`,
                 backgroundSize: "cover",
@@ -188,7 +190,7 @@ export function NowPlayingScreen({
               src={artwork}
               title={getDisplayTitle(currentSong)}
               size="xl"
-              className="!rounded-full !w-[min(288px,calc(100vw-2rem))] !h-[min(288px,calc(100vw-2rem))]"
+              className="!w-[min(288px,calc(100vw-2rem))] !h-[min(288px,calc(100vw-2rem))]"
             />
           )}
         </div>

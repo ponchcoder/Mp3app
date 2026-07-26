@@ -42,6 +42,19 @@ body {
   padding-top: env(safe-area-inset-top, 0px);
 }
 
+/* Fixed elements above bottom nav + home indicator */
+.bottom-above-nav {
+  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.bottom-fab {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.bottom-fab-with-player {
+  bottom: calc(10.5rem + env(safe-area-inset-bottom, 0px));
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 4px;

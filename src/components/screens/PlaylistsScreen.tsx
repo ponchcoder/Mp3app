@@ -87,7 +87,7 @@ export function PlaylistsScreen() {
         .filter((s): s is NonNullable<typeof s> => s !== undefined)
     : [];
 
-  const fabBottomClass = currentSong ? "bottom-[165px]" : "bottom-[88px]";
+  const fabBottomClass = currentSong ? "bottom-fab-with-player" : "bottom-fab";
   const userPlaylists = playlists.filter((p) => !isSystemPlaylist(p));
 
   if (selected) {

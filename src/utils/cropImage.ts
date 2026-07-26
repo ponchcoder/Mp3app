@@ -1,5 +1,6 @@
 /**
- * Crop an image to a square JPEG data URL for album artwork.
+ * Crop an image to a square data URL for album artwork.
+ * Preserves PNG/WebP when possible; JPEG otherwise.
  */
 
 import type { Area } from "react-easy-crop";
@@ -11,6 +12,16 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     image.addEventListener("error", reject);
     image.src = src;
   });
+}
+
+function getOutputFormat(imageSrc: string): { mime: string; quality?: number } {
+  if (imageSrc.startsWith("data:image/png")) {
+    return { mime: "image/png" };
+  }
+  if (imageSrc.startsWith("data:image/webp")) {
+    return { mime: "image/webp", quality: 0.92 };
+  }
+  return { mime: "image/jpeg", quality: 0.92 };
 }
 
 export async function getCroppedImageDataUrl(
@@ -38,5 +49,8 @@ export async function getCroppedImageDataUrl(
     outputSize
   );
 
-  return canvas.toDataURL("image/jpeg", 0.92);
+  const { mime, quality } = getOutputFormat(imageSrc);
+  return quality !== undefined
+    ? canvas.toDataURL(mime, quality)
+    : canvas.toDataURL(mime);
 }

@@ -54,13 +54,13 @@ export function ImageCropModal({
           <X size={22} className="text-[var(--color-text)]" />
         </button>
         <h2 className="font-display text-lg font-semibold text-[var(--color-text)]">
-          Crop Artwork
+          Adjust Artwork
         </h2>
         <div className="w-10" aria-hidden="true" />
       </div>
 
       <p className="px-4 pb-3 text-sm text-[var(--color-text-secondary)] text-center">
-        Pinch or scroll to zoom, drag to reposition
+        Drag to reposition or pinch to zoom — your cover stays square
       </p>
 
       <div className="relative flex-1 min-h-0 bg-black/90">
@@ -70,7 +70,7 @@ export function ImageCropModal({
           zoom={zoom}
           aspect={1}
           cropShape="rect"
-          showGrid
+          showGrid={false}
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onCropComplete={onCropComplete}

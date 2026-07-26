@@ -81,7 +81,7 @@ export function LibraryScreen() {
     playQueue(songIds, Math.floor(Math.random() * songIds.length));
   };
 
-  const fabBottomClass = currentSong ? "bottom-[165px]" : "bottom-[88px]";
+  const fabBottomClass = currentSong ? "bottom-fab-with-player" : "bottom-fab";
 
   const cycleSort = () => {
     const fields: SortField[] = ["name", "artist", "dateAdded", "duration"];
