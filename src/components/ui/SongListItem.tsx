@@ -131,13 +131,15 @@ export function SongListItem({
               type="button"
               onClick={onToggleFavorite}
               aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-              className="p-1.5 rounded-full hover:bg-[var(--color-glass)] transition-colors"
+              className={`p-1.5 rounded-full transition-colors ${
+                isFavorite ? "" : "hover:bg-[var(--color-glass)]"
+              }`}
             >
               <Heart
                 size={16}
                 className={
                   isFavorite
-                    ? "text-blush-500 fill-blush-500"
+                    ? "text-red-500 fill-red-500 stroke-red-500"
                     : "text-[var(--color-text-secondary)]"
                 }
               />

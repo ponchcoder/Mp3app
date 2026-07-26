@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { Playlist } from "@/types";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { ImageCropModal } from "@/components/ui/ImageCropModal";
 
 interface SongOptionsMenuProps {
   songId: string;
@@ -45,6 +46,7 @@ export function SongOptionsMenu({
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const artworkInputRef = useRef<HTMLInputElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -101,7 +103,7 @@ export function SongOptionsMenu({
         aria-hidden="true"
       />
       <div
-        className="fixed z-[201] py-1 bg-[var(--color-card)] border border-[var(--color-card-border)] rounded-xl shadow-glass min-w-[160px] max-w-[220px]"
+        className="fixed z-[201] py-1 bg-[var(--color-bg)] border border-[var(--color-card-border)] rounded-xl shadow-lg min-w-[160px] max-w-[220px]"
         style={{
           top: menuAnchor.bottom + 4,
           right: Math.max(8, window.innerWidth - menuAnchor.right),
@@ -113,7 +115,7 @@ export function SongOptionsMenu({
             <button
               type="button"
               onClick={() => setShowPlaylistPicker(false)}
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-glass)] border-b border-[var(--color-card-border)]"
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] border-b border-[var(--color-card-border)]"
             >
               ← Pick playlist
             </button>
@@ -130,7 +132,7 @@ export function SongOptionsMenu({
                         onAddToPlaylist?.(playlist.id);
                         closeMenu();
                       }}
-                      className="flex items-center justify-between gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-glass)] disabled:opacity-50"
+                      className="flex items-center justify-between gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-50"
                     >
                       <span className="truncate">{playlist.name}</span>
                       {alreadyAdded && (
@@ -152,7 +154,7 @@ export function SongOptionsMenu({
               <button
                 type="button"
                 onClick={() => setShowPlaylistPicker(true)}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-glass)]"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
               >
                 <ListMusic size={14} /> Add to Playlist
               </button>
@@ -164,7 +166,7 @@ export function SongOptionsMenu({
                   artworkInputRef.current?.click();
                   closeMenu();
                 }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-glass)]"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
               >
                 <ImageIcon size={14} /> Set Artwork
               </button>
@@ -176,7 +178,7 @@ export function SongOptionsMenu({
                   onRequestRename();
                   closeMenu();
                 }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-glass)]"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
               >
                 <Edit3 size={14} /> Rename
               </button>
@@ -188,7 +190,7 @@ export function SongOptionsMenu({
                   onRemove();
                   closeMenu();
                 }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-glass)]"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
               >
                 <Trash2 size={14} /> Remove from playlist
               </button>
@@ -200,7 +202,7 @@ export function SongOptionsMenu({
                   onDelete();
                   closeMenu();
                 }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 hover:bg-[var(--color-bg-secondary)]"
               >
                 <Trash2 size={14} /> Delete
               </button>
@@ -232,11 +234,23 @@ export function SongOptionsMenu({
           className="hidden"
           onChange={async (e) => {
             const file = e.target.files?.[0];
+            e.target.value = "";
             if (file) {
               const { fileToDataURL } = await import("@/utils");
               const dataUrl = await fileToDataURL(file);
-              onSetArtwork(dataUrl);
+              setCropImageSrc(dataUrl);
             }
+          }}
+        />
+      )}
+
+      {mounted && cropImageSrc && onSetArtwork && (
+        <ImageCropModal
+          imageSrc={cropImageSrc}
+          onCancel={() => setCropImageSrc(null)}
+          onConfirm={(dataUrl) => {
+            onSetArtwork(dataUrl);
+            setCropImageSrc(null);
           }}
         />
       )}

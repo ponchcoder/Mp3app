@@ -31,6 +31,17 @@ import {
   configureAudioElement,
 } from "@/services/media-session";
 import { useBackgroundAudio } from "@/hooks/useBackgroundAudio";
+import { useLibrary } from "@/contexts/LibraryContext";
+
+function songMetaChanged(a: SongMeta, b: SongMeta): boolean {
+  return (
+    a.customTitle !== b.customTitle ||
+    a.artwork !== b.artwork ||
+    a.title !== b.title ||
+    a.artist !== b.artist ||
+    a.album !== b.album
+  );
+}
 
 interface PlayerContextValue {
   // State
@@ -44,6 +55,7 @@ interface PlayerContextValue {
   queue: QueueItem[];
   queueIndex: number;
   isLoading: boolean;
+  queueShuffled: boolean;
 
   // Actions
   play: (songId?: string) => void;
@@ -61,6 +73,7 @@ interface PlayerContextValue {
   playNext: (songId: string) => void;
   removeFromQueue: (index: number) => void;
   reorderQueue: (fromIndex: number, toIndex: number) => void;
+  toggleQueueShuffle: () => void;
   resetPlayback: () => void;
   audioRef: React.RefObject<HTMLAudioElement | null>;
 }
@@ -110,6 +123,7 @@ function shouldStopAtQueueEnd(
 }
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
+  const { songs } = useLibrary();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentSong, setCurrentSong] = useState<SongMeta | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -121,8 +135,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [queueIndex, setQueueIndex] = useState(-1);
   const [isLoading, setIsLoading] = useState(false);
+  const [queueShuffled, setQueueShuffled] = useState(false);
   const currentUrlRef = useRef<string | null>(null);
   const shuffledOrderRef = useRef<number[]>([]);
+  const originalQueueRef = useRef<QueueItem[] | null>(null);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydrationTokenRef = useRef(0);
   const playbackRef = useRef<PlaybackSnapshot>({
@@ -134,6 +150,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const preloadedNextRef = useRef<PreloadedTrack | null>(null);
   const endHandledRef = useRef(false);
   const preloadNextTrackRef = useRef<() => Promise<void>>(async () => {});
+  const currentSongIdRef = useRef<string | null>(null);
+  currentSongIdRef.current = currentSong?.id ?? null;
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
@@ -182,6 +200,22 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     playbackRef.current = { queue, queueIndex, shuffle, repeat };
   }, [queue, queueIndex, shuffle, repeat]);
+
+  // Keep now playing in sync when library metadata changes (rename, artwork, etc.)
+  useEffect(() => {
+    const id = currentSongIdRef.current;
+    if (!id) return;
+
+    const updated = songs.find((s) => s.id === id);
+    if (!updated) return;
+
+    setCurrentSong((prev) => {
+      if (!prev || prev.id !== id) return prev;
+      if (!songMetaChanged(prev, updated)) return prev;
+      updateMediaMetadata(updated);
+      return updated;
+    });
+  }, [songs]);
 
   // Load persisted playback state on mount
   useEffect(() => {
@@ -268,6 +302,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const song = await getSong(songId);
       if (!song) return;
 
+      const queueIdx = queue.findIndex((item) => item.songId === songId);
+      if (queueIdx >= 0) setQueueIndex(queueIdx);
+
       const { audioData: _audio, ...meta } = song;
       void _audio;
 
@@ -295,7 +332,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [loadAudio]
+    [loadAudio, queue]
   );
 
   const play = useCallback(
@@ -525,6 +562,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const playQueue = useCallback(
     async (songIds: string[], startIndex = 0) => {
       clearPreloadedNext();
+      originalQueueRef.current = null;
+      setQueueShuffled(false);
       const items: QueueItem[] = songIds.map((id) => ({
         songId: id,
         addedAt: Date.now(),
@@ -555,11 +594,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const removeFromQueue = useCallback(
     (index: number) => {
+      const removedSongId = queue[index]?.songId;
       setQueue((prev) => prev.filter((_, i) => i !== index));
+      if (queueShuffled && originalQueueRef.current && removedSongId) {
+        originalQueueRef.current = originalQueueRef.current.filter(
+          (item) => item.songId !== removedSongId
+        );
+      }
       if (index < queueIndex) setQueueIndex((prev) => prev - 1);
       else if (index === queueIndex) pause();
     },
-    [queueIndex, pause]
+    [queue, queueIndex, pause, queueShuffled]
   );
 
   const reorderQueue = useCallback((fromIndex: number, toIndex: number) => {
@@ -575,7 +620,42 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       if (fromIndex > prev && toIndex <= prev) return prev + 1;
       return prev;
     });
-  }, []);
+    clearPreloadedNext();
+  }, [clearPreloadedNext]);
+
+  const toggleQueueShuffle = useCallback(() => {
+    clearPreloadedNext();
+    shuffledOrderRef.current = [];
+
+    if (queueShuffled) {
+      const original = originalQueueRef.current;
+      if (!original?.length) {
+        setQueueShuffled(false);
+        originalQueueRef.current = null;
+        return;
+      }
+
+      const currentSongId = queue[queueIndex]?.songId;
+      setQueue(original.map((item) => ({ ...item })));
+      const restoredIndex = currentSongId
+        ? original.findIndex((item) => item.songId === currentSongId)
+        : queueIndex;
+      setQueueIndex(restoredIndex >= 0 ? restoredIndex : 0);
+      setQueueShuffled(false);
+      originalQueueRef.current = null;
+      return;
+    }
+
+    originalQueueRef.current = queue.map((item) => ({ ...item }));
+    const currentSongId = queue[queueIndex]?.songId;
+    const shuffled = shuffleArray([...queue]);
+    setQueue(shuffled);
+    const shuffledIndex = currentSongId
+      ? shuffled.findIndex((item) => item.songId === currentSongId)
+      : queueIndex;
+    setQueueIndex(shuffledIndex >= 0 ? shuffledIndex : 0);
+    setQueueShuffled(true);
+  }, [queue, queueIndex, queueShuffled, clearPreloadedNext]);
 
   const resetPlayback = useCallback(() => {
     if (persistTimerRef.current) {
@@ -596,6 +676,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     setQueue([]);
     setQueueIndex(-1);
+    setQueueShuffled(false);
+    originalQueueRef.current = null;
     setIsPlaying(false);
     setCurrentSong(null);
     setCurrentTime(0);
@@ -721,6 +803,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         queue,
         queueIndex,
         isLoading,
+        queueShuffled,
         play,
         pause,
         togglePlay,
@@ -736,6 +819,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         playNext,
         removeFromQueue,
         reorderQueue,
+        toggleQueueShuffle,
         resetPlayback,
         audioRef,
       }}

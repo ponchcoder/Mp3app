@@ -93,7 +93,12 @@ function AppContent() {
 
       <SurprisesLayer surprises={surprises} />
 
-      <main className="relative z-10" role="main">
+      <main
+        className={`relative z-10 transition-opacity duration-300 ${
+          showFullPlayer ? "opacity-0 pointer-events-none" : ""
+        }`}
+        role="main"
+      >
         {renderScreen()}
       </main>
 

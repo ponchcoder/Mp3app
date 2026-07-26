@@ -309,7 +309,7 @@ export function PlaylistsScreen() {
                   {isSystem ? (
                     <Heart
                       size={32}
-                      className="text-blush-500 mb-2 opacity-80 fill-blush-500"
+                      className="text-red-500 mb-2 opacity-80 fill-red-500 stroke-red-500"
                     />
                   ) : (
                     <ListMusic

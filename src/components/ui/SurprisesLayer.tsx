@@ -54,7 +54,7 @@ export function SurprisesLayer({ surprises }: SurprisesLayerProps) {
           >
             {surprise.type === "heart" && (
               <Heart
-                className="text-blush-400 fill-blush-400 drop-shadow-sm"
+                className="text-red-500 fill-red-500 stroke-red-500 drop-shadow-sm"
                 size={surprise.size ?? 20}
               />
             )}
